@@ -1,0 +1,43 @@
+name: Publish Expo Android App
+
+# This workflow is triggered on every push to the main branch.
+on:
+  push:
+    branches:
+      - main
+
+# Define environment variables for the workflow.
+env:
+  # The Expo Access Token is used to authenticate with Expo.
+  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+# The jobs to run in this workflow.
+jobs:
+  publish_android:
+    # Use the latest Ubuntu environment.
+    runs-on: ubuntu-latest
+    
+    # Steps to be executed in this job.
+    steps:
+      - name: Check out Git repository
+        # Use the actions/checkout action to get your code.
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        # Set up a specific version of Node.js.
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Publish Android app
+        # Build and publish your Android app.
+        run: eas build --platform android --profile production

@@ -1,361 +1,509 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  SafeAreaView,
   ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
+  TouchableOpacity,
+  View,
   ActivityIndicator,
-  Alert,
+  PermissionsAndroid,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bluetooth, Wifi, Usb, Search, CircleCheck as CheckCircle, Circle as XCircle } from 'lucide-react-native';
 
-interface Device {
-  id: string;
-  name: string;
-  type: 'bluetooth' | 'wifi' | 'usb';
-  status: 'connected' | 'available' | 'error';
-  address?: string;
-}
+// NOTE: You must install these libraries before running this code.
+// For autolinking to work correctly, run the following:
+// npm install react-native-tcp-socket react-native-ping react-native-usb-serialport-for-android
+// For iOS, you may also need to run:
+// cd ios && npx pod-install
+import TcpSocket from 'react-native-tcp-socket';
+import ping from 'react-native-ping';
+// The USB library requires specific permissions and setup.
+// This is the starting point for USB printer testing.
+import {
+    Parity,
+  UsbSerialManager,
+} from 'react-native-usb-serialport-for-android';
 
-export default function ConnectTab() {
-  const [activeTab, setActiveTab] = useState<'bluetooth' | 'wifi' | 'usb'>('bluetooth');
-  const [devices, setDevices] = useState<Device[]>([
-    { id: '1', name: 'TVS RP-45', type: 'bluetooth', status: 'available', address: '00:11:22:33:44:55' },
-    { id: '2', name: 'Zebra ZD420', type: 'bluetooth', status: 'connected', address: '00:11:22:33:44:56' },
-    { id: '3', name: 'Epson TM-T20III', type: 'usb', status: 'available' },
-  ]);
-  const [scanning, setScanning] = useState(false);
-  const [wifiIP, setWifiIP] = useState('192.168.1.100');
-  const [wifiPort, setWifiPort] = useState('9100');
+// Define a type for the port status to ensure type safety.
+type PortStatus = {
+  port?: number | string;
+  result: string;
+};
 
-  const handleScan = () => {
-    setScanning(true);
-    // Mock scanning process
-    setTimeout(() => {
-      setScanning(false);
-      Alert.alert('Scan Complete', 'Found 3 available devices');
-    }, 2000);
+// Define a type for USB device information.
+type UsbDevice = {
+  deviceId: number;
+  deviceName: string;
+};
+
+// The main App component that contains all the UI and logic.
+const App = () => {
+  // State variables with explicit type annotations.
+  const [ipAddress, setIpAddress] = useState<string>('192.168.1.100');
+  const [ports, setPorts] = useState<string>('9100, 80, 443');
+  const [portStatus, setPortStatus] = useState<PortStatus[]>([]);
+  const [pingStatus, setPingStatus] = useState<string>('');
+  const [isPortTesting, setIsPortTesting] = useState<boolean>(false);
+  const [isPinging, setIsPinging] = useState<boolean>(false);
+  const [isIpPrinting, setIsIpPrinting] = useState<boolean>(false);
+  const [ipPrintStatus, setIpPrintStatus] = useState<string>('');
+  
+  // Refactored state for USB functionality
+  const [usbState, setUsbState] = useState<{
+    devices: UsbDevice[];
+    status: string;
+    selectedDevice: UsbDevice | null;
+    isTesting: boolean;
+  }>({
+    devices: [],
+    status: '',
+    selectedDevice: null,
+    isTesting: false,
+  });
+
+  // Function to handle the port connectivity test.
+  const testPorts = async (): Promise<void> => {
+    setPortStatus([]);
+    setIsPortTesting(true);
+
+    if (!ipAddress || !ports) {
+      setPortStatus([{ result: 'Please enter both IP address and port(s).' }]);
+      setIsPortTesting(false);
+      return;
+    }
+
+    const portList = ports.split(',').map((p: string) => p.trim()).filter((p: string) => p);
+    
+    for (const portStr of portList) {
+      const port = parseInt(portStr, 10);
+      if (isNaN(port)) {
+        setPortStatus(prev => [...prev, { port: portStr, result: 'Invalid port number.' }]);
+        continue;
+      }
+
+      setPortStatus(prev => [...prev, { port, result: 'Testing...' }]);
+
+      try {
+        const result: string = await new Promise((resolve) => {
+          const client = TcpSocket.createConnection({
+            host: ipAddress,
+            port: port,
+            timeout: 5000, // Timeout in milliseconds
+          }, () => {
+            client.destroy();
+            resolve('Connection successful!');
+          });
+
+          client.on('error', (error: { message: string }) => {
+            resolve(`Connection failed: ${error.message}`);
+          });
+
+          client.on('timeout', () => {
+            client.destroy();
+            resolve('Connection timed out.');
+          });
+        });
+        
+        // Update the status for the specific port
+        setPortStatus(prev => prev.map(item => 
+          item.port === port ? { ...item, result: result } : item
+        ));
+      } catch (e: any) {
+        setPortStatus(prev => prev.map(item => 
+          item.port === port ? { ...item, result: `Connection failed: ${e.message}` } : item
+        ));
+      }
+    }
+    
+    setIsPortTesting(false);
   };
 
-  const handleConnect = (device: Device) => {
-    const updatedDevices = devices.map(d =>
-      d.id === device.id
-        ? { ...d, status: d.status === 'connected' ? 'available' : 'connected' as const }
-        : d.status === 'connected' ? { ...d, status: 'available' as const } : d
-    );
-    setDevices(updatedDevices);
+  // Function to handle the ping test.
+  const testPing = async (): Promise<void> => {
+    setPingStatus('');
+    setIsPinging(true);
+
+    if (!ipAddress) {
+      setPingStatus('Please enter an IP address.');
+      setIsPinging(false);
+      return;
+    }
+
+    setPingStatus(`Pinging ${ipAddress}...`);
+    
+    try {
+      // The ping library returns true for success.
+      const successful: boolean = await ping.ping(ipAddress, { timeout: 1000 });
+      if (successful) {
+        setPingStatus(`Ping successful: ${ipAddress} is reachable.`);
+      } else {
+        setPingStatus(`Ping failed: ${ipAddress} is unreachable.`);
+      }
+    } catch (e: any) {
+      setPingStatus(`Ping failed: ${e.message}`);
+    }
+
+    setIsPinging(false);
+  };
+  
+  // Function to send a print job over IP.
+  const sendIpPrintJob = async (): Promise<void> => {
+    setIpPrintStatus('');
+    setIsIpPrinting(true);
+
+    const port = parseInt(ports.split(',')[0].trim(), 10);
+    if (!ipAddress || isNaN(port)) {
+      setIpPrintStatus('Please enter a valid IP address and port.');
+      setIsIpPrinting(false);
+      return;
+    }
+
+    try {
+      const client = TcpSocket.createConnection({
+        host: ipAddress,
+        port: port,
+        // timeout: 10000, // Increased timeout for printing
+      }, () => {
+        setIpPrintStatus('Connected. Sending print job...');
+        // A simple text print job.
+        const printData = 'Hello, this is a test print job!\n\n\n\n\n\n\n';
+        client.write(printData);
+        client.destroy();
+        setIpPrintStatus('Print job sent successfully!');
+      });
+
+      client.on('error', (error: { message: string }) => {
+        setIpPrintStatus(`Print job failed: ${error.message}`);
+        client.destroy();
+      });
+
+      client.on('timeout', () => {
+        setIpPrintStatus('Connection timed out.');
+        client.destroy();
+      });
+
+    } catch (e: any) {
+      setIpPrintStatus(`Print job failed: ${e.message}`);
+    }
+
+    setIsIpPrinting(false);
   };
 
-  const handleWifiConnect = () => {
-    const newDevice: Device = {
-      id: Date.now().toString(),
-      name: `Network Printer (${wifiIP})`,
-      type: 'wifi',
-      status: 'connected',
-      address: `${wifiIP}:${wifiPort}`,
-    };
-    setDevices([...devices.filter(d => d.type !== 'wifi'), newDevice]);
-    Alert.alert('Connected', `Successfully connected to ${wifiIP}:${wifiPort}`);
-  };
+  // Function to list connected USB devices.
+  const findUsbPrinters = async (): Promise<void> => {
+    setUsbState(prev => ({ ...prev, isTesting: true, status: 'Scanning for USB devices...' }));
+    
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.USB_DEVICE,
+        {
+          title: 'USB Permission',
+          message: 'App needs access to USB devices to connect to printers.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        },
+      );
 
-  const getStatusIcon = (status: Device['status']) => {
-    switch (status) {
-      case 'connected':
-        return <CheckCircle size={20} color="#4CAF50" />;
-      case 'error':
-        return <XCircle size={20} color="#F44336" />;
-      default:
-        return null;
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        // Use the correct method from UsbSerialManager
+        const devicesRaw = await UsbSerialManager.list();
+        // Map the returned devices to the UsbDevice type
+        const devices: UsbDevice[] = devicesRaw.map((d: any) => ({
+          deviceId: d.deviceId,
+          deviceName: d.deviceName,
+        }));
+        if (devices.length > 0) {
+          setUsbState(prev => ({
+            ...prev,
+            devices,
+            status: `Found ${devices.length} USB device(s).`,
+            isTesting: false,
+          }));
+        } else {
+          setUsbState(prev => ({
+            ...prev,
+            devices: [],
+            status: 'No USB devices found.',
+            isTesting: false,
+          }));
+        }
+      } else {
+        setUsbState(prev => ({
+          ...prev,
+          status: 'USB permission denied. Cannot scan for printers.',
+          isTesting: false,
+        }));
+      }
+    } catch (e: any) {
+      setUsbState(prev => ({
+        ...prev,
+        status: `Error listing USB devices: ${e.message}`,
+        isTesting: false,
+      }));
     }
   };
 
-  const filteredDevices = devices.filter(device => device.type === activeTab);
+  // Function to send a test print job to the selected USB printer.
+  const testUsbPrint = async (): Promise<void> => {
+    if (!usbState.selectedDevice) {
+      setUsbState(prev => ({ ...prev, status: 'Please select a USB device first.' }));
+      return;
+    }
+
+    setUsbState(prev => ({ ...prev, isTesting: true, status: 'Sending USB print job...' }));
+
+    try {
+      // Connect to the selected device using the correct method from UsbSerialManager
+      const usbSerialport = await UsbSerialManager.open(usbState.selectedDevice.deviceId, {
+        baudRate: 9600, // Common baud rate for printers
+        dataBits: 8,
+        stopBits: 1,
+        parity: Parity.None,
+      });
+
+      setUsbState(prev => ({ ...prev, status: 'Sending data...' }));
+      // Simple test print command
+      const printData = "Hello, this is a test print over USB!\n\n\n\n\n\n\n";
+      // Use the 'send' method on the opened port instance
+      await usbSerialport.send(printData);
+      
+      setUsbState(prev => ({ ...prev, status: 'Disconnecting...' }));
+      // Disconnect by closing the port instance
+      await usbSerialport.close();
+      
+      setUsbState(prev => ({
+        ...prev,
+        status: 'USB print job sent successfully!',
+        isTesting: false,
+        selectedDevice: null,
+      }));
+    } catch (e: any) {
+      setUsbState(prev => ({
+        ...prev,
+        status: `USB print job failed: ${e.message}`,
+        isTesting: false,
+      }));
+    }
+  };
+
+  // Helper function to set the selected USB device
+  const handleSelectUsbDevice = (device: UsbDevice) => {
+    setUsbState(prev => ({ ...prev, selectedDevice: device }));
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Printer Connection</Text>
-        <Text style={styles.subtitle}>Connect to your thermal or label printer</Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+        <Text style={styles.title}>Printer Connectivity Test</Text>
 
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'bluetooth' && styles.activeTab]}
-          onPress={() => setActiveTab('bluetooth')}
-        >
-          <Bluetooth size={20} color={activeTab === 'bluetooth' ? '#2196F3' : '#757575'} />
-          <Text style={[styles.tabText, activeTab === 'bluetooth' && styles.activeTabText]}>
-            Bluetooth
+        <TextInput
+          style={styles.input}
+          onChangeText={setIpAddress}
+          value={ipAddress}
+          placeholder="Printer IP Address"
+          keyboardType="numeric"
+        />
+
+        <TextInput
+          style={styles.input}
+          onChangeText={setPorts}
+          value={ports}
+          placeholder="Port(s) (e.g., 9100, 80)"
+          keyboardType="default"
+        />
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={[styles.button, isPortTesting && styles.buttonDisabled]} 
+            onPress={testPorts}
+            disabled={isPortTesting}>
+            <Text style={styles.buttonText}>
+              {isPortTesting ? 'Testing...' : 'Test Port(s) Connection'}
+            </Text>
+          </TouchableOpacity>
+          {isPortTesting && <ActivityIndicator style={styles.activityIndicator} size="small" color="#007AFF" />}
+
+          <TouchableOpacity 
+            style={[styles.button, styles.pingButton, isPinging && styles.buttonDisabled]} 
+            onPress={testPing}
+            disabled={isPinging}>
+            <Text style={styles.buttonText}>
+              {isPinging ? 'Pinging...' : 'Ping IP Address'}
+            </Text>
+          </TouchableOpacity>
+          {isPinging && <ActivityIndicator style={styles.activityIndicator} size="small" color="#007AFF" />}
+        </View>
+
+        <View style={styles.statusBox}>
+          <Text style={styles.statusTitle}>Port Test Status</Text>
+          {portStatus.map((item: PortStatus, index: number) => (
+            <Text key={index} style={styles.statusText}>
+              <Text style={{ fontWeight: 'bold' }}>Port {item.port || 'N/A'}:</Text> {item.result}
+            </Text>
+          ))}
+          <Text style={styles.statusText}>{pingStatus}</Text>
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={[styles.button, styles.printButton, isIpPrinting && styles.buttonDisabled]} 
+            onPress={sendIpPrintJob}
+            disabled={isIpPrinting}>
+            <Text style={styles.buttonText}>
+              {isIpPrinting ? 'Sending...' : 'Send IP Print Job'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.statusText}>{ipPrintStatus}</Text>
+
+        <Text style={styles.sectionTitle}>USB Printer Testing</Text>
+        <TouchableOpacity 
+          style={[styles.button, usbState.isTesting && styles.buttonDisabled]} 
+          onPress={findUsbPrinters}
+          disabled={usbState.isTesting}>
+          <Text style={styles.buttonText}>
+            {usbState.isTesting ? 'Scanning...' : 'Find USB Printers'}
           </Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'wifi' && styles.activeTab]}
-          onPress={() => setActiveTab('wifi')}
-        >
-          <Wifi size={20} color={activeTab === 'wifi' ? '#2196F3' : '#757575'} />
-          <Text style={[styles.tabText, activeTab === 'wifi' && styles.activeTabText]}>
-            Wi-Fi / LAN
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'usb' && styles.activeTab]}
-          onPress={() => setActiveTab('usb')}
-        >
-          <Usb size={20} color={activeTab === 'usb' ? '#2196F3' : '#757575'} />
-          <Text style={[styles.tabText, activeTab === 'usb' && styles.activeTabText]}>
-            USB OTG
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content}>
-        {activeTab === 'wifi' ? (
-          <View style={styles.wifiSection}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>IP Address</Text>
-              <TextInput
-                style={styles.input}
-                value={wifiIP}
-                onChangeText={setWifiIP}
-                placeholder="192.168.1.100"
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Port</Text>
-              <TextInput
-                style={styles.input}
-                value={wifiPort}
-                onChangeText={setWifiPort}
-                placeholder="9100"
-                keyboardType="numeric"
-              />
-            </View>
-            <TouchableOpacity style={styles.connectButton} onPress={handleWifiConnect}>
-              <Text style={styles.connectButtonText}>Connect to Network Printer</Text>
+        
+        {usbState.devices.length > 0 && (
+          <View style={styles.usbDeviceList}>
+            <Text style={styles.usbDeviceTitle}>Select a Device:</Text>
+            {usbState.devices.map((device) => (
+              <TouchableOpacity
+                key={device.deviceId}
+                style={[styles.usbDeviceButton, usbState.selectedDevice?.deviceId === device.deviceId && styles.selectedUsbDevice]}
+                onPress={() => handleSelectUsbDevice(device)}>
+                <Text style={styles.usbDeviceText}>{device.deviceName}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity 
+              style={[
+                styles.button,
+                styles.printButton,
+                (!usbState.selectedDevice || usbState.isTesting) && styles.buttonDisabled
+              ]}
+              onPress={testUsbPrint}
+              disabled={!usbState.selectedDevice || usbState.isTesting}>
+              <Text style={styles.buttonText}>
+                {usbState.isTesting ? 'Sending...' : 'Send USB Print Job'}
+              </Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <>
-            <View style={styles.scanSection}>
-              <TouchableOpacity
-                style={[styles.scanButton, scanning && styles.scanButtonDisabled]}
-                onPress={handleScan}
-                disabled={scanning}
-              >
-                {scanning ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Search size={20} color="#fff" />
-                )}
-                <Text style={styles.scanButtonText}>
-                  {scanning ? 'Scanning...' : `Scan for ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Devices`}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.deviceList}>
-              <Text style={styles.sectionTitle}>Available Devices</Text>
-              {filteredDevices.map((device) => (
-                <View key={device.id} style={styles.deviceCard}>
-                  <View style={styles.deviceInfo}>
-                    <Text style={styles.deviceName}>{device.name}</Text>
-                    {device.address && (
-                      <Text style={styles.deviceAddress}>{device.address}</Text>
-                    )}
-                  </View>
-                  <View style={styles.deviceActions}>
-                    {getStatusIcon(device.status)}
-                    <TouchableOpacity
-                      style={[
-                        styles.deviceButton,
-                        device.status === 'connected' && styles.deviceButtonDisconnect,
-                      ]}
-                      onPress={() => handleConnect(device)}
-                    >
-                      <Text
-                        style={[
-                          styles.deviceButtonText,
-                          device.status === 'connected' && styles.deviceButtonTextDisconnect,
-                        ]}
-                      >
-                        {device.status === 'connected' ? 'Disconnect' : 'Connect'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </>
         )}
+        <Text style={styles.statusText}>{usbState.status}</Text>
+        {usbState.isTesting && <ActivityIndicator style={styles.activityIndicator} size="small" color="#007AFF" />}
+
       </ScrollView>
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#f5f5f5',
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    backgroundColor: '#fff',
+  scrollViewContent: {
+    padding: 20,
+    alignItems: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#212121',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#757575',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#2196F3',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#757575',
-  },
-  activeTabText: {
-    color: '#2196F3',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  wifiSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#212121',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#FAFAFA',
-  },
-  connectButton: {
-    backgroundColor: '#2196F3',
-    borderRadius: 8,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  connectButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  scanSection: {
-    marginBottom: 24,
-  },
-  scanButton: {
-    backgroundColor: '#2196F3',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  scanButtonDisabled: {
-    backgroundColor: '#BDBDBD',
-  },
-  scanButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  deviceList: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#333',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#212121',
-    marginBottom: 16,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 30,
+    marginBottom: 10,
+    color: '#333',
   },
-  deviceCard: {
-    flexDirection: 'row',
+  input: {
+    width: '100%',
+    height: 50,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    marginBottom: 15,
+    backgroundColor: '#fff',
+  },
+  buttonContainer: {
+    width: '100%',
+  },
+  button: {
+    width: '100%',
+    backgroundColor: '#007AFF',
+    paddingVertical: 15,
+    borderRadius: 8,
     alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    marginBottom: 10,
+    elevation: 3,
   },
-  deviceInfo: {
-    flex: 1,
+  pingButton: {
+    backgroundColor: '#4CDA64',
   },
-  deviceName: {
+  printButton: {
+    backgroundColor: '#FF9500',
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  buttonText: {
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
-    color: '#212121',
-    marginBottom: 4,
+    fontWeight: 'bold',
   },
-  deviceAddress: {
-    fontSize: 14,
-    color: '#757575',
+  statusBox: {
+    width: '100%',
+    backgroundColor: '#e9e9e9',
+    borderRadius: 8,
+    padding: 15,
+    marginTop: 15,
   },
-  deviceActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  statusTitle: {
+    fontWeight: 'bold',
+    marginBottom: 5,
   },
-  deviceButton: {
-    backgroundColor: '#2196F3',
-    borderRadius: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  statusText: {
+    fontSize: 16,
+    color: '#333',
+    lineHeight: 24,
+    textAlign: 'center',
   },
-  deviceButtonDisconnect: {
-    backgroundColor: '#F44336',
+  activityIndicator: {
+    marginTop: 10,
   },
-  deviceButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+  usbDeviceList: {
+    width: '100%',
+    backgroundColor: '#e9e9e9',
+    borderRadius: 8,
+    padding: 15,
+    marginTop: 15,
   },
-  deviceButtonTextDisconnect: {
-    color: '#fff',
+  usbDeviceTitle: {
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  usbDeviceButton: {
+    backgroundColor: '#ddd',
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 5,
+  },
+  selectedUsbDevice: {
+    backgroundColor: '#c0e0ff',
+    borderColor: '#007AFF',
+    borderWidth: 1,
+  },
+  usbDeviceText: {
+    fontSize: 16,
   },
 });
+
+export default App;

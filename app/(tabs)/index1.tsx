@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,9 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-  Platform,
-  PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bluetooth, Wifi, Usb, Search, CircleCheck as CheckCircle, Circle as XCircle } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-// import { BluetoothManager } from 'react-native-bluetooth-escpos-printer';
-import UsbPrinter from 'react-native-usb-printer';
 
 interface Device {
   id: string;
@@ -27,104 +22,22 @@ interface Device {
 
 export default function ConnectTab() {
   const [activeTab, setActiveTab] = useState<'bluetooth' | 'wifi' | 'usb'>('bluetooth');
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<Device[]>([
+    { id: '1', name: 'TVS RP-45', type: 'bluetooth', status: 'available', address: '00:11:22:33:44:55' },
+    { id: '2', name: 'Zebra ZD420', type: 'bluetooth', status: 'connected', address: '00:11:22:33:44:56' },
+    { id: '3', name: 'Epson TM-T20III', type: 'usb', status: 'available' },
+  ]);
   const [scanning, setScanning] = useState(false);
   const [wifiIP, setWifiIP] = useState('192.168.1.100');
   const [wifiPort, setWifiPort] = useState('9100');
 
-  // Load connected devices from storage on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem('connectedDevices');
-        if (stored) {
-          const connected: Device[] = JSON.parse(stored);
-          setDevices(prev =>
-            prev.map(d => {
-              const found = connected.find(cd => cd.id === d.id);
-              return found ? { ...d, status: found.status } : d;
-            }).concat(
-              connected.filter(cd => !prev.some(d => d.id === cd.id))
-            )
-          );
-        }
-      } catch (e) {
-        // ignore
-      }
-    })();
-  }, []);
-
-  // Save connected devices to storage
-  const saveConnectedDevices = async (devices: Device[]) => {
-    try {
-      const connected = devices.filter(d => d.status === 'connected');
-      await AsyncStorage.setItem('connectedDevices', JSON.stringify(connected));
-    } catch (e) {
-      // ignore
-    }
-  };
-
-  const requestBluetoothPermissions = async () => {
-    if (Platform.OS === 'android') {
-      const permissions = [
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      ];
-      const granted = await PermissionsAndroid.requestMultiple(permissions);
-      return Object.values(granted).every(v => v === PermissionsAndroid.RESULTS.GRANTED);
-    }
-    return true;
-  };
-
-  const handleScan = async () => {
+  const handleScan = () => {
     setScanning(true);
-    try {
-      let discovered: Device[] = [];
-      if (activeTab === 'bluetooth') {
-        // Request permissions before scanning
-        const hasPermission = await requestBluetoothPermissions();
-        if (!hasPermission) {
-          Alert.alert('Permission Denied', 'Bluetooth permissions are required to scan for devices.');
-          setScanning(false);
-          return;
-        }
-        // await BluetoothManager.enableBluetooth();
-        // // Scan for paired devices (most printers are paired first)
-        // const paired = await BluetoothManager.getBondedDevices();
-        // discovered = paired.map((dev: any) => ({
-        //   id: dev.address,
-        //   name: dev.name || dev.address,
-        //   type: 'bluetooth',
-        //   status: 'available',
-        //   address: dev.address,
-        // }));
-      } else if (activeTab === 'usb') {
-        // USB scan using react-native-usb-printer
-        try {
-          const usbDevices = await UsbPrinter.getDeviceList();
-          discovered = usbDevices.map((dev: any) => ({
-            id: String(dev.device_id || dev.deviceId || dev.id),
-            name: dev.device_name || dev.deviceName || 'USB Printer',
-            type: 'usb',
-            status: 'available',
-          }));
-        } catch (usbErr) {
-          // fallback if no devices found or error
-          discovered = [];
-        }
-      }
-      setDevices(prev => {
-        const ids = new Set(prev.map(d => d.id));
-        const newDevices = discovered.filter(d => !ids.has(d.id));
-        return [...prev, ...newDevices];
-      });
-      Alert.alert('Scan Complete', `Found ${discovered.length} available device${discovered.length === 1 ? '' : 's'}`);
-    } catch (e: any) {
-      Alert.alert('Scan Failed', e?.message || 'Could not scan for devices');
-    } finally {
+    // Mock scanning process
+    setTimeout(() => {
       setScanning(false);
-    }
+      Alert.alert('Scan Complete', 'Found 3 available devices');
+    }, 2000);
   };
 
   const handleConnect = (device: Device) => {
@@ -134,7 +47,6 @@ export default function ConnectTab() {
         : d.status === 'connected' ? { ...d, status: 'available' as const } : d
     );
     setDevices(updatedDevices);
-    saveConnectedDevices(updatedDevices);
   };
 
   const handleWifiConnect = () => {
@@ -145,9 +57,7 @@ export default function ConnectTab() {
       status: 'connected',
       address: `${wifiIP}:${wifiPort}`,
     };
-    const updatedDevices = [...devices.filter(d => d.type !== 'wifi'), newDevice];
-    setDevices(updatedDevices);
-    saveConnectedDevices(updatedDevices);
+    setDevices([...devices.filter(d => d.type !== 'wifi'), newDevice]);
     Alert.alert('Connected', `Successfully connected to ${wifiIP}:${wifiPort}`);
   };
 
