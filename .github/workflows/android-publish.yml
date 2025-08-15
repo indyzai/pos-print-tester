@@ -40,4 +40,4 @@ jobs:
 
       - name: Publish Android app
         # Build and publish your Android app.
-        run: eas build --platform android --profile production
+        run: eas build --platform android --profile production --non-interactive --no-wait
