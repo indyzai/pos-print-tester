@@ -1,0 +1,8 @@
+{
+  "appId": "com.indyzai.pos.printsetup",
+  "appName": "Printer Testing App",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -8,9 +8,14 @@
     "build:web": "expo export --platform web",
     "lint": "expo lint",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "postinstall": "node patch-jcenter.js"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.2",
+    "@capacitor/cli": "^7.4.2",
+    "@capacitor/core": "^7.4.2",
+    "@capacitor/ios": "^7.4.2",
     "@expo/vector-icons": "^14.1.0",
     "@lucide/lab": "^0.1.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -53,6 +58,7 @@
     "@babel/core": "^7.25.2",
     "@react-native-community/cli": "^20.0.0",
     "@types/react": "~19.0.10",
+    "expo-build-properties": "^0.14.8",
     "typescript": "~5.8.3"
   }
 }
