@@ -23,7 +23,8 @@
       "expo-web-browser"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "baseUrl": "/pos-print-tester"
     },
     "android": {
       "package": "com.indyzai.pos.printsetup"
