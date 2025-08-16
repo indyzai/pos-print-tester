@@ -98,6 +98,9 @@ jobs:
 
       - name: Build Android APK
         run: |
+         cat > android/gradle.properties << EOF
+         echo "my-upload-key.jks"
+         cat > android/my-upload-key.jks << EOF
          cd android && ./gradlew assembleRelease
          ls -l app/build/outputs/apk/release
 
@@ -106,6 +109,12 @@ jobs:
         with:
           name: android-apk
           path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload APK Artifact Unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
 
 
 #   ios-build:
@@ -192,10 +201,11 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          cname: spm-printer-test.indyzai.com 
 
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs: [android-build]
     if: github.ref == 'refs/heads/main'
     steps:
@@ -237,6 +247,7 @@ jobs:
             - **Web**: Available at the deployed URL
           files: |
             app-release.aab
+            app-release-unsigned.apk
             # app-release.apk
             # App.ipa
           draft: false
