@@ -74,16 +74,25 @@ jobs:
         run: |
          npx cap sync android
 
-      - name: Build Android APK
+      - name: Build and Sign Android AAB
         run: |
-          cd android
-          ./gradlew assembleDebug
+            cd android
+            ./gradlew bundle
 
-      - name: Upload Android APK
+      - name: Extract Android signing key from env
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE }}" > android/release.jks.base64
+          base64 -d android/release.jks.base64 > android/release.decrypted.jks
+
+      - name: Sign dev build
+        run: jarsigner -keystore android/release.decrypted.jks -storepass "${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" -signedjar ./android/app/build/outputs/bundle/release/app-release-signed.aab ./android/app/build/outputs/bundle/release/app-release.aab release
+
+
+      - name: Upload Android AAB
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/bundle/release/app-release-signed.aab
 
 #   ios-build:
 #     runs-on: macos-latest
@@ -209,8 +218,8 @@ jobs:
             - **iOS**: Use TestFlight or enterprise distribution
             - **Web**: Available at the deployed URL
           files: |
-            app-debug.apk
-            App.ipa
+            app-release-signed.aab
+            # App.ipa
           draft: false
           prerelease: false
         env:
