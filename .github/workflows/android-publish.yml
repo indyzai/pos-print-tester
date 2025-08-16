@@ -74,25 +74,32 @@ jobs:
         run: |
          npx cap sync android
 
-      - name: Build and Sign Android AAB
+      - name: Decode Keystore
         run: |
-            cd android
-            ./gradlew bundle
-
-      - name: Extract Android signing key from env
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/my-upload-key.jks
+      
+      - name: Create Properties File
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE }}" > android/release.jks.base64
-          base64 -d android/release.jks.base64 > android/release.decrypted.jks
+          echo "KEYSTORE_FILE=my-upload-key.jks" >> android/gradle.properties
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/gradle.properties
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/gradle.properties
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/gradle.properties
 
-      - name: Sign dev build
-        run: jarsigner -keystore android/release.decrypted.jks -storepass "${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" -signedjar ./android/app/build/outputs/bundle/release/app-release-signed.aab ./android/app/build/outputs/bundle/release/app-release.aab indyzai
+      - name: Build Android App Bundle (.aab) & APK
+        run: cd android && ./gradlew bundleRelease && ./gradlew assembleRelease
 
+      - name: Upload App Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app-bundle
+          path: android/app/build/outputs/bundle/release/app-release.aab
 
-      - name: Upload Android AAB
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: android/app/build/outputs/bundle/release/app-release-signed.aab
+          path: android/app/build/outputs/apk/release/app-release.apk
+
 
 #   ios-build:
 #     runs-on: macos-latest
@@ -193,7 +200,11 @@ jobs:
         with:
           name: android-apk
           path: ./
-
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-app-bundle
+          path: ./
     #   - name: Download iOS build
     #     uses: actions/download-artifact@v4
     #     with:
@@ -218,7 +229,8 @@ jobs:
             - **iOS**: Use TestFlight or enterprise distribution
             - **Web**: Available at the deployed URL
           files: |
-            app-release-signed.aab
+            app-release.aab
+            app-release.apk
             # App.ipa
           draft: false
           prerelease: false
