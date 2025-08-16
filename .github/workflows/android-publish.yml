@@ -69,7 +69,9 @@ jobs:
         run: npx cap add android
 
       - name: Sync Capacitor
-        run: npx cap sync android
+        run: |
+         rm -rf ./android
+         npx cap sync android
 
       - name: Build Android APK
         run: |
@@ -110,7 +112,9 @@ jobs:
           path: dist/
 
       - name: Add iOS platform
-        run: npx cap add ios
+        run: |
+         rm -rf ./ios
+         npx cap add ios
 
       - name: Sync Capacitor
         run: npx cap sync ios
@@ -144,6 +148,9 @@ jobs:
 
   deploy-web:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
     needs: web-build
     if: github.ref == 'refs/heads/main'
     steps:
