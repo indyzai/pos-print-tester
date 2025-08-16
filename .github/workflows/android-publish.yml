@@ -76,7 +76,7 @@ jobs:
 
       - name: Decode Keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/my-upload-key.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/my-upload-key.jks
       
       - name: Create Properties File
         run: |
@@ -198,11 +198,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download Android APK
-        uses: actions/download-artifact@v4
-        with:
-          name: android-apk
-          path: ./
+    #   - name: Download Android APK
+    #     uses: actions/download-artifact@v4
+    #     with:
+    #       name: android-apk
+    #       path: ./
       - name: Download Android APK
         uses: actions/download-artifact@v4
         with:
@@ -233,7 +233,7 @@ jobs:
             - **Web**: Available at the deployed URL
           files: |
             app-release.aab
-            app-release.apk
+            # app-release.apk
             # App.ipa
           draft: false
           prerelease: false
