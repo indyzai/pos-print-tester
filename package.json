@@ -4,12 +4,17 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "EXPO_NO_TELEMETRY=1 expo start -c",
+    "dev": "EXPO_NO_TELEMETRY=1 expo start",
     "build:web": "expo export --platform web",
-    "lint": "expo lint",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "postinstall": "node patch-jcenter.js"
+    "build": "expo export --platform web",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "cap:build:android": "npm run build && npx cap sync android && npx cap build android",
+    "cap:build:ios": "yarn build && npx cap sync ios && npx cap build ios",
+    "lint": "expo lint"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.2",
