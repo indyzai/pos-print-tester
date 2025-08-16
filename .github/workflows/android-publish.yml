@@ -85,67 +85,67 @@ jobs:
           name: android-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-  ios-build:
-    runs-on: macos-latest
-    needs: web-build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#   ios-build:
+#     runs-on: macos-latest
+#     needs: web-build
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn'
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: ${{ env.NODE_VERSION }}
+#           cache: 'yarn'
 
-      - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
+#       - name: Setup Xcode
+#         uses: maxim-lobanov/setup-xcode@v1
+#         with:
+#           xcode-version: latest-stable
 
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
+#       - name: Install dependencies
+#         run: yarn install --frozen-lockfile
 
-      - name: Download web build
-        uses: actions/download-artifact@v4
-        with:
-          name: web-build
-          path: dist/
+#       - name: Download web build
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: web-build
+#           path: dist/
 
-      - name: Add iOS platform
-        run: |
-         rm -rf ./ios
-         npx cap add ios
+#       - name: Add iOS platform
+#         run: |
+#          rm -rf ./ios
+#          npx cap add ios
 
-      - name: Sync Capacitor
-        run: npx cap sync ios
+#       - name: Sync Capacitor
+#         run: npx cap sync ios
 
-      - name: Build iOS app
-        run: |
-          cd ios/App
-          xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug -destination generic/platform=iOS -archivePath App.xcarchive archive
-          xcodebuild -exportArchive -archivePath App.xcarchive -exportPath . -exportOptionsPlist exportOptions.plist
+#       - name: Build iOS app
+#         run: |
+#           cd ios/App
+#           xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug -destination generic/platform=iOS -archivePath App.xcarchive archive
+#           xcodebuild -exportArchive -archivePath App.xcarchive -exportPath . -exportOptionsPlist exportOptions.plist
 
-      - name: Create iOS export options
-        run: |
-          cat > ios/App/exportOptions.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>development</string>
-            <key>teamID</key>
-            <string>\${{ secrets.IOS_TEAM_ID }}</string>
-          </dict>
-          </plist>
-          EOF
+#       - name: Create iOS export options
+#         run: |
+#           cat > ios/App/exportOptions.plist << EOF
+#           <?xml version="1.0" encoding="UTF-8"?>
+#           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+#           <plist version="1.0">
+#           <dict>
+#             <key>method</key>
+#             <string>development</string>
+#             <key>teamID</key>
+#             <string>\${{ secrets.IOS_TEAM_ID }}</string>
+#           </dict>
+#           </plist>
+#           EOF
 
-      - name: Upload iOS build
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-build
-          path: ios/App/App.ipa
+#       - name: Upload iOS build
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: ios-build
+#           path: ios/App/App.ipa
 
   deploy-web:
     runs-on: ubuntu-latest
@@ -185,11 +185,11 @@ jobs:
           name: android-apk
           path: ./
 
-      - name: Download iOS build
-        uses: actions/download-artifact@v4
-        with:
-          name: ios-build
-          path: ./
+    #   - name: Download iOS build
+    #     uses: actions/download-artifact@v4
+    #     with:
+    #       name: ios-build
+    #       path: ./
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
