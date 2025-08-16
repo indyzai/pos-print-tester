@@ -1,43 +1,209 @@
-name: Publish Expo Android App
+name: Build and Deploy
 
-# This workflow is triggered on every push to the main branch.
 on:
   push:
-    branches:
-      - main
+    branches: [ main, develop ]
+#   pull_request:
+#     branches: [ main ]
 
-# Define environment variables for the workflow.
 env:
-  # The Expo Access Token is used to authenticate with Expo.
-  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+  NODE_VERSION: '20'
 
-# The jobs to run in this workflow.
 jobs:
-  publish_android:
-    # Use the latest Ubuntu environment.
+  web-build:
     runs-on: ubuntu-latest
-    
-    # Steps to be executed in this job.
     steps:
-      - name: Check out Git repository
-        # Use the actions/checkout action to get your code.
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        # Set up a specific version of Node.js.
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Publish Android app
-        # Build and publish your Android app.
-        run: eas build --platform android --profile production --non-interactive --no-wait
+      - name: Build web app
+        run: yarn build
+
+      - name: Upload web build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+  android-build:
+    runs-on: ubuntu-latest
+    needs: web-build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Android APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  ios-build:
+    runs-on: macos-latest
+    needs: web-build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+      - name: Add iOS platform
+        run: npx cap add ios
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Build iOS app
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug -destination generic/platform=iOS -archivePath App.xcarchive archive
+          xcodebuild -exportArchive -archivePath App.xcarchive -exportPath . -exportOptionsPlist exportOptions.plist
+
+      - name: Create iOS export options
+        run: |
+          cat > ios/App/exportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>development</string>
+            <key>teamID</key>
+            <string>\${{ secrets.IOS_TEAM_ID }}</string>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Upload iOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: ios/App/App.ipa
+
+  deploy-web:
+    runs-on: ubuntu-latest
+    needs: web-build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          cname: spm-printer-test.indyzai.com 
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [android-build, ios-build]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./
+
+      - name: Download iOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-build
+          path: ./
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          body: |
+            Automated release of Printer Testing App
+            
+            ## Changes
+            - Built from commit: ${{ github.sha }}
+            - Android APK included
+            - iOS build included
+            
+            ## Installation
+            - **Android**: Download and install the APK file
+            - **iOS**: Use TestFlight or enterprise distribution
+            - **Web**: Available at the deployed URL
+          files: |
+            app-debug.apk
+            App.ipa
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
