@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bluetooth, Wifi, Usb, Search, CircleCheck as CheckCircle, Circle as XCircle } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// import { BluetoothManager } from 'react-native-bluetooth-escpos-printer';
+import { scanDevices, requestBluetoothPermissions } from '../services/deviceService';
 import UsbPrinter from 'react-native-usb-printer';
 
 interface Device {
@@ -64,56 +64,19 @@ export default function ConnectTab() {
     }
   };
 
-  const requestBluetoothPermissions = async () => {
-    if (Platform.OS === 'android') {
-      const permissions = [
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      ];
-      const granted = await PermissionsAndroid.requestMultiple(permissions);
-      return Object.values(granted).every(v => v === PermissionsAndroid.RESULTS.GRANTED);
-    }
-    return true;
-  };
-
   const handleScan = async () => {
     setScanning(true);
     try {
       let discovered: Device[] = [];
       if (activeTab === 'bluetooth') {
-        // Request permissions before scanning
         const hasPermission = await requestBluetoothPermissions();
         if (!hasPermission) {
           Alert.alert('Permission Denied', 'Bluetooth permissions are required to scan for devices.');
           setScanning(false);
           return;
         }
-        // await BluetoothManager.enableBluetooth();
-        // // Scan for paired devices (most printers are paired first)
-        // const paired = await BluetoothManager.getBondedDevices();
-        // discovered = paired.map((dev: any) => ({
-        //   id: dev.address,
-        //   name: dev.name || dev.address,
-        //   type: 'bluetooth',
-        //   status: 'available',
-        //   address: dev.address,
-        // }));
-      } else if (activeTab === 'usb') {
-        // USB scan using react-native-usb-printer
-        try {
-          const usbDevices = await UsbPrinter.getDeviceList();
-          discovered = usbDevices.map((dev: any) => ({
-            id: String(dev.device_id || dev.deviceId || dev.id),
-            name: dev.device_name || dev.deviceName || 'USB Printer',
-            type: 'usb',
-            status: 'available',
-          }));
-        } catch (usbErr) {
-          // fallback if no devices found or error
-          discovered = [];
-        }
       }
+      discovered = await scanDevices(activeTab);
       setDevices(prev => {
         const ids = new Set(prev.map(d => d.id));
         const newDevices = discovered.filter(d => !ids.has(d.id));

@@ -9,21 +9,16 @@ import {
   View,
   ActivityIndicator,
   PermissionsAndroid,
+  Alert, // Use Alert for simple, non-blocking messages
 } from 'react-native';
 
 // NOTE: You must install these libraries before running this code.
-// For autolinking to work correctly, run the following:
-// npm install react-native-tcp-socket react-native-ping react-native-usb-serialport-for-android
+// npm install @capacitor/core @capacitor/android @capacitor-community/usb-serial
 // For iOS, you may also need to run:
 // cd ios && npx pod-install
+import { UsbSerial } from 'capacitor-plugin-usb-serial';
 import TcpSocket from 'react-native-tcp-socket';
 import ping from 'react-native-ping';
-// The USB library requires specific permissions and setup.
-// This is the starting point for USB printer testing.
-import {
-    Parity,
-  UsbSerialManager,
-} from 'react-native-usb-serialport-for-android';
 
 // Define a type for the port status to ensure type safety.
 type PortStatus = {
@@ -33,8 +28,9 @@ type PortStatus = {
 
 // Define a type for USB device information.
 type UsbDevice = {
-  deviceId: number;
-  deviceName: string;
+  productId: number;
+  vendorId: number;
+  serialNumber: string;
 };
 
 // The main App component that contains all the UI and logic.
@@ -163,7 +159,6 @@ const App = () => {
       const client = TcpSocket.createConnection({
         host: ipAddress,
         port: port,
-        // timeout: 10000, // Increased timeout for printing
       }, () => {
         setIpPrintStatus('Connected. Sending print job...');
         // A simple text print job.
@@ -195,25 +190,11 @@ const App = () => {
     setUsbState(prev => ({ ...prev, isTesting: true, status: 'Scanning for USB devices...' }));
     
     try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.USB_DEVICE,
-        {
-          title: 'USB Permission',
-          message: 'App needs access to USB devices to connect to printers.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        },
-      );
-
-      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-        // Use the correct method from UsbSerialManager
-        const devicesRaw = await UsbSerialManager.list();
-        // Map the returned devices to the UsbDevice type
-        const devices: UsbDevice[] = devicesRaw.map((d: any) => ({
-          deviceId: d.deviceId,
-          deviceName: d.deviceName,
-        }));
+      // Request permission using the capacitor plugin
+      const granted = await UsbSerial.requestPermissions();
+      if (granted.granted) {
+        // Use the getDevices method to list connected devices
+        const { devices } = await UsbSerial.getDevices();
         if (devices.length > 0) {
           setUsbState(prev => ({
             ...prev,
@@ -248,30 +229,32 @@ const App = () => {
   // Function to send a test print job to the selected USB printer.
   const testUsbPrint = async (): Promise<void> => {
     if (!usbState.selectedDevice) {
-      setUsbState(prev => ({ ...prev, status: 'Please select a USB device first.' }));
+      Alert.alert('No device selected', 'Please select a USB device first.');
       return;
     }
 
     setUsbState(prev => ({ ...prev, isTesting: true, status: 'Sending USB print job...' }));
 
     try {
-      // Connect to the selected device using the correct method from UsbSerialManager
-      const usbSerialport = await UsbSerialManager.open(usbState.selectedDevice.deviceId, {
+      // Open the selected device using its vendorId and productId
+      await UsbSerial.open({
+        vendorId: usbState.selectedDevice.vendorId,
+        productId: usbState.selectedDevice.productId,
         baudRate: 9600, // Common baud rate for printers
         dataBits: 8,
         stopBits: 1,
-        parity: Parity.None,
+        parity: 'none',
       });
 
       setUsbState(prev => ({ ...prev, status: 'Sending data...' }));
       // Simple test print command
       const printData = "Hello, this is a test print over USB!\n\n\n\n\n\n\n";
-      // Use the 'send' method on the opened port instance
-      await usbSerialport.send(printData);
+      // Use the 'write' method to send data
+      await UsbSerial.write({ data: printData });
       
       setUsbState(prev => ({ ...prev, status: 'Disconnecting...' }));
-      // Disconnect by closing the port instance
-      await usbSerialport.close();
+      // Disconnect by closing the port
+      await UsbSerial.close();
       
       setUsbState(prev => ({
         ...prev,
@@ -373,10 +356,12 @@ const App = () => {
             <Text style={styles.usbDeviceTitle}>Select a Device:</Text>
             {usbState.devices.map((device) => (
               <TouchableOpacity
-                key={device.deviceId}
-                style={[styles.usbDeviceButton, usbState.selectedDevice?.deviceId === device.deviceId && styles.selectedUsbDevice]}
+                key={device.serialNumber} // Use a unique identifier for the key
+                style={[styles.usbDeviceButton, usbState.selectedDevice?.serialNumber === device.serialNumber && styles.selectedUsbDevice]}
                 onPress={() => handleSelectUsbDevice(device)}>
-                <Text style={styles.usbDeviceText}>{device.deviceName}</Text>
+                <Text style={styles.usbDeviceText}>
+                  {`VendorID: ${device.vendorId}, ProductID: ${device.productId}`}
+                </Text>
               </TouchableOpacity>
             ))}
             <TouchableOpacity 

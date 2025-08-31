@@ -98,11 +98,11 @@ jobs:
 
       - name: Build Android APK
         run: |
-         cat > android/gradle.properties << EOF
-         echo "my-upload-key.jks"
-         cat > android/my-upload-key.jks << EOF
-         cd android && ./gradlew assembleRelease
-         ls -l app/build/outputs/apk/release
+            cat > android/gradle.properties 
+            echo "my-upload-key.jks"
+            cat > android/my-upload-key.jks 
+            cd android && ./gradlew assembleRelease
+            ls -l app/build/outputs/apk/release
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -113,7 +113,7 @@ jobs:
       - name: Upload APK Artifact Unsigned
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
+          name: android-apk-unsigned
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
 
 
@@ -212,11 +212,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-    #   - name: Download Android APK
-    #     uses: actions/download-artifact@v4
-    #     with:
-    #       name: android-apk
-    #       path: ./
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./
+      - name: Download Android APK Unsigned
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk-unsigned
+          path: ./
       - name: Download Android APK
         uses: actions/download-artifact@v4
         with:
